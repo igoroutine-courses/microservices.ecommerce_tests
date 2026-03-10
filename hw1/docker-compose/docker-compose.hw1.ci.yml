@@ -1,0 +1,24 @@
+version: "3.1"
+services:
+  cart:
+    image: cart
+    hostname: cart
+    build:
+      context: .
+      dockerfile: ./cart/Dockerfile
+    restart: unless-stopped
+    environment:
+      LOMS_GRPC_ADDR: "${LOMS_GRPC_ADDR}"
+      GRPC_PORT: "${CART_GRPC_PORT}"
+      GRPC_GATEWAY_PORT: "${CART_GRPC_GATEWAY_PORT}"
+
+  loms:
+    image: loms
+    hostname: loms
+    build:
+      context: .
+      dockerfile: ./loms/Dockerfile
+    restart: unless-stopped
+    environment:
+      GRPC_PORT: "${LOMS_GRPC_PORT}"
+      GRPC_GATEWAY_PORT: "${LOMS_GRPC_GATEWAY_PORT}"

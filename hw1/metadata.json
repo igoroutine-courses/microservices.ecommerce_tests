@@ -1,0 +1,42 @@
+{
+  "ref": "main",
+  "version_path": "version.txt",
+  "files": [
+    {
+      "from": "tests/checkout_test.go",
+      "to": "integration-tests/checkout_test.go"
+    },
+    {
+      "from": "docker-compose/docker-compose.hw1.ci.yml",
+      "to": "./docker-compose.hw1.ci.yml"
+    },
+    {
+      "from": "docker-compose/docker-compose.hw1.test.yml",
+      "to": "./docker-compose.hw1.test.yml"
+    },
+    {
+      "from": "docker-compose/docker-compose.hw1.yml",
+      "to": "./docker-compose.hw1.yml"
+    },
+    {
+      "from": "docker-compose/docker-compose.hw1.yml",
+      "to": "./docker-compose.hw1.yml"
+    },
+    {
+      "from": "README.md",
+      "to": "README.md"
+    },
+    {
+      "from": ".golangci.yaml",
+      "to": ".golangci.yaml"
+    },
+    {
+      "from": "easyp.yaml",
+      "to": "easyp.yaml"
+    },
+    {
+      "from": "Taskfile.yml",
+      "to": "Taskfile.yml"
+    }
+  ]
+}
