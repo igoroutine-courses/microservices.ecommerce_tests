@@ -8,19 +8,27 @@
     },
     {
       "from": "docker-compose/docker-compose.hw1.ci.yml",
-      "to": "./docker-compose.hw1.ci.yml"
+      "to": "docker-compose.hw1.ci.yml"
     },
     {
       "from": "docker-compose/docker-compose.hw1.test.yml",
-      "to": "./docker-compose.hw1.test.yml"
+      "to": "docker-compose.hw1.test.yml"
     },
     {
       "from": "docker-compose/docker-compose.hw1.yml",
-      "to": "./docker-compose.hw1.yml"
+      "to": "docker-compose.hw1.yml"
     },
     {
-      "from": "docker-compose/docker-compose.hw1.yml",
-      "to": "./docker-compose.hw1.yml"
+      "from": "docker/cart/Dockerfile",
+      "to": "cart/Dockerfile"
+    },
+    {
+      "from": "docker/loms/Dockerfile",
+      "to": "loms/Dockerfile"
+    },
+    {
+      "from": "docker/integration-tests/Dockerfile",
+      "to": "integration-tests/Dockerfile"
     },
     {
       "from": "README.md",
