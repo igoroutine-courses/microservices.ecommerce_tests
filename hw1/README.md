@@ -246,7 +246,7 @@ task test
 
 Обновить файлы задания
 ```bash
-task update
+task update hw=hw1
 ```
 
 Принудительно обновить файлы задания
