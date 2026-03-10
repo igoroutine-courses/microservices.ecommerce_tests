@@ -9,6 +9,9 @@ services:
     depends_on:
       - cart
       - loms
-#    environment:
-#      BASE_URL: "${BASE_URL}"
+    environment:
+      CART_GRPC_ADDR: "cart:50051"
+      CART_GATEWAY_ADDR: "cart:8080"
+      LOMS_GRPC_ADDR: "loms:50052"
+      LOMS_GATEWAY_ADDR: "loms:8081"
     command: ["go", "test", "-v", "./..."]

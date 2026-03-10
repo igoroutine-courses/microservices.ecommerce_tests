@@ -8,16 +8,12 @@ services:
       dockerfile: ./cart/Dockerfile
     restart: unless-stopped
     environment:
-      LOMS_GRPC_ADDR: "${LOMS_GRPC_ADDR}"
-      GRPC_PORT: "${CART_GRPC_PORT}"
-      GRPC_GATEWAY_PORT: "${CART_GRPC_GATEWAY_PORT}"
+      LOMS_GRPC_ADDR: "loms:50052"
+      GRPC_PORT: "50051"
+      GRPC_GATEWAY_PORT: "8080"
     ports:
-      - "${CART_GRPC_PORT}:${CART_GRPC_PORT}"
-      - "${CART_GRPC_GATEWAY_PORT}:${CART_GRPC_GATEWAY_PORT}"
-  #    depends_on:
-  #      - loms
-  #      - cart-pgbouncer
-  #      - jaeger
+      - "8080:8080"
+      - "50051:50051"
 
   loms:
     image: loms
@@ -27,8 +23,8 @@ services:
       dockerfile: ./loms/Dockerfile
     restart: unless-stopped
     environment:
-      GRPC_PORT: "${LOMS_GRPC_PORT}"
-      GRPC_GATEWAY_PORT: "${LOMS_GRPC_GATEWAY_PORT}"
+      GRPC_PORT: "50052"
+      GRPC_GATEWAY_PORT: "8081"
     ports:
-      - "${LOMS_GRPC_PORT}:${LOMS_GRPC_PORT}"
-      - "${LOMS_GRPC_GATEWAY_PORT}:${LOMS_GRPC_GATEWAY_PORT}"
+      - "50052:50052"
+      - "8081:8081"

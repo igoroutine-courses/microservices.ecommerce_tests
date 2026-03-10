@@ -8,9 +8,9 @@ services:
       dockerfile: ./cart/Dockerfile
     restart: unless-stopped
     environment:
-      LOMS_GRPC_ADDR: "${LOMS_GRPC_ADDR}"
-      GRPC_PORT: "${CART_GRPC_PORT}"
-      GRPC_GATEWAY_PORT: "${CART_GRPC_GATEWAY_PORT}"
+      LOMS_GRPC_ADDR: "loms:50052"
+      GRPC_PORT: "50051"
+      GRPC_GATEWAY_PORT: "8080"
 
   loms:
     image: loms
@@ -20,5 +20,5 @@ services:
       dockerfile: ./loms/Dockerfile
     restart: unless-stopped
     environment:
-      GRPC_PORT: "${LOMS_GRPC_PORT}"
-      GRPC_GATEWAY_PORT: "${LOMS_GRPC_GATEWAY_PORT}"
+      GRPC_PORT: "50052"
+      GRPC_GATEWAY_PORT: "8081"
