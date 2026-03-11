@@ -222,7 +222,6 @@ type (
 * В описании PR заполнить количество часов, которые вы потратили на это задание
 * Не стоит изменять файлы в директории [.github](.github)
 
-
 ## Скрипты
 Для запуска скриптов на курсе необходимо установить [go-task](https://taskfile.dev/docs/installation)
 
@@ -233,6 +232,8 @@ type (
 ```bash 
 task update hw=hw1
 ```
+
+При возникновении ошибок с `task update` ознакомьтесь в [гайдом](https://github.com/igoroutine-courses/guide.github_scripts)
 
 Запустить линтер:
 ```bash 
