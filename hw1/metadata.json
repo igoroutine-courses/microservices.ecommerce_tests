@@ -3,8 +3,32 @@
   "version_path": "version.txt",
   "files": [
     {
-      "from": "tests/checkout_test.go",
-      "to": "integration-tests/checkout_test.go"
+      "from": "proto/cart/util_cart_pb.go",
+      "to": "integration-tests/cart/util_cart_pb.go"
+    },
+    {
+      "from": "proto/loms/util_loms_pb.go",
+      "to": "integration-tests/loms/util_loms_pb.go"
+    },
+    {
+      "from": "proto/product/util_product_pb.go",
+      "to": "integration-tests/product/util_product_pb.go"
+    },
+    {
+      "from": "proto/stocks/util_stocks_pb.go",
+      "to": "integration-tests/stocks/util_stocks_pb.go"
+    },
+    {
+      "from": "tests/grpc_test.go",
+      "to": "integration-tests/grpc_test.go"
+    },
+    {
+      "from": "tests/grpc_gateway_test.go",
+      "to": "integration-tests/grpc_gateway_test.go"
+    },
+    {
+      "from": "tests/util_test.go",
+      "to": "integration-tests/util_test.go"
     },
     {
       "from": "docker-compose/docker-compose.ci.yml",
