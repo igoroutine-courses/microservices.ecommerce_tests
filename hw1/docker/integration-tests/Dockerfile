@@ -3,7 +3,7 @@ FROM golang:1.25
 WORKDIR /tests
 
 COPY integration-tests/go.mod integration-tests/go.sum ./
-RUN go mod download || true
+RUN go mod tidy
 
 COPY integration-tests/. .
 
