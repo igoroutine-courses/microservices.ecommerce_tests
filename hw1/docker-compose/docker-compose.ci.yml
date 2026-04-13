@@ -8,9 +8,37 @@ services:
       dockerfile: ./cart/Dockerfile
     restart: unless-stopped
     environment:
-      LOMS_GRPC_ADDR: "loms:50052"
       GRPC_PORT: "50051"
       GRPC_GATEWAY_PORT: "8080"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "ecommerce"
+      POSTGRES_USER: "ecommerce_user"
+      POSTGRES_PASSWORD: "12345"
+      LOMS_GRPC_ADDR: "loms:50052"
+    depends_on:
+      - postgres
+      - loms
+
+  #  cart-2:
+  #    image: cart
+  #    hostname: cart
+  #    build:
+  #      context: .
+  #      dockerfile: ./cart/Dockerfile
+  #    restart: unless-stopped
+  #    environment:
+  #      GRPC_PORT: "50051"
+  #      GRPC_GATEWAY_PORT: "8080"
+  #      POSTGRES_HOST: "postgres"
+  #      POSTGRES_PORT: "5432"
+  #      POSTGRES_DB: "ecommerce"
+  #      POSTGRES_USER: "ecommerce_user"
+  #      POSTGRES_PASSWORD: "12345"
+  #      LOMS_GRPC_ADDR: "loms:50052"
+  #    depends_on:
+  #      - postgres
+  #      - loms
 
   loms:
     image: loms
@@ -22,3 +50,67 @@ services:
     environment:
       GRPC_PORT: "50052"
       GRPC_GATEWAY_PORT: "8081"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "ecommerce"
+      POSTGRES_USER: "ecommerce_user"
+      POSTGRES_PASSWORD: "12345"
+      NOTIFICATIONS_GRPC_ADDR: "notifications:50053"
+    depends_on:
+      - postgres
+      - notifications
+
+  #  loms-2:
+  #    image: loms
+  #    hostname: loms
+  #    build:
+  #      context: .
+  #      dockerfile: ./loms/Dockerfile
+  #    restart: unless-stopped
+  #    environment:
+  #      GRPC_PORT: "50052"
+  #      GRPC_GATEWAY_PORT: "8081"
+  #      POSTGRES_HOST: "postgres"
+  #      POSTGRES_PORT: "5432"
+  #      POSTGRES_DB: "ecommerce"
+  #      POSTGRES_USER: "ecommerce_user"
+  #      POSTGRES_PASSWORD: "12345"
+  #      NOTIFICATIONS_GRPC_ADDR: "notifications:50053"
+  #    depends_on:
+  #      - postgres
+  #      - notifications
+
+  notifications:
+    image: notifications
+    hostname: notifications
+    build:
+      context: .
+      dockerfile: ./notifications/Dockerfile
+    restart: unless-stopped
+    environment:
+      # TODO: callback url
+      GRPC_PORT: "50053"
+
+  postgres:
+    container_name: 'postgres'
+    image: postgres:17
+    restart: always
+    environment:
+      POSTGRES_DB: "ecommerce"
+      POSTGRES_USER: "ecommerce_user"
+      POSTGRES_PASSWORD: "12345"
+      POSTGRES_PORT: "5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "port=5432"
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ecommerce_user -d ecommerce" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

@@ -14,4 +14,9 @@ services:
       CART_GATEWAY_ADDR: "cart:8080"
       LOMS_GRPC_ADDR: "loms:50052"
       LOMS_GATEWAY_ADDR: "loms:8081"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "ecommerce"
+      POSTGRES_USER: "ecommerce_user"
+      POSTGRES_PASSWORD: "12345"
     command: ["go", "test", "-v", "./..."]

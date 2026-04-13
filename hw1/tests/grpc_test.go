@@ -19,10 +19,12 @@ import (
 
 func TestCartOperations(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
 
-	connCart := dial(t, cfg.CartGrpcAddr)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connCart := dial(t, cfg.Clients.CartGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 
 	productClient := product.NewProductServiceClient(connLoms)
@@ -77,8 +79,10 @@ func TestCartOperations(t *testing.T) {
 
 func TestCartAddItemProductNotFound(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.CartGrpcAddr)
+	connCart := dial(t, cfg.Clients.CartGrpcAddr)
 	ctx := context.Background()
 	client := cart.NewCartClient(connCart)
 
@@ -96,9 +100,11 @@ func TestCartAddItemProductNotFound(t *testing.T) {
 
 func TestCartAddItemInsufficientStock(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.CartGrpcAddr)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connCart := dial(t, cfg.Clients.CartGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -128,10 +134,12 @@ func TestCartAddItemInsufficientStock(t *testing.T) {
 
 func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
 
-	connCart := dial(t, cfg.CartGrpcAddr)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connCart := dial(t, cfg.Clients.CartGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 
 	productClient := product.NewProductServiceClient(connLoms)
@@ -225,9 +233,11 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 
 func TestCheckoutCart(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.CartGrpcAddr)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connCart := dial(t, cfg.Clients.CartGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -259,8 +269,10 @@ func TestCheckoutCart(t *testing.T) {
 
 func TestLOMSOrderOperations(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -303,13 +315,15 @@ func TestLOMSOrderOperations(t *testing.T) {
 		OrderId: orderID,
 	})
 	require.NoError(t, err)
-	require.Equal(t, loms.OrderStatus_ORDER_STATUS_AWAITING_PAYED, getResp2.GetStatus())
+	require.Equal(t, loms.OrderStatus_ORDER_STATUS_PAID, getResp2.GetStatus())
 }
 
 func TestGRPC_LOMS_GetOrder_NotFound(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	_, err := loms.NewLomsClient(connLoms).GetOrder(ctx, &loms.GetOrderRequest{
 		OrderId: 27272727272727,
@@ -324,8 +338,10 @@ func TestGRPC_LOMS_GetOrder_NotFound(t *testing.T) {
 
 func TestLOMSPayOrderInvalidStatus(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -362,8 +378,10 @@ func TestLOMSPayOrderInvalidStatus(t *testing.T) {
 
 func TestLOMSCancelOrderInvalidStatus(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -399,8 +417,10 @@ func TestLOMSCancelOrderInvalidStatus(t *testing.T) {
 
 func TestLOMSCreateOrderInsufficientStock(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -423,8 +443,10 @@ func TestLOMSCreateOrderInsufficientStock(t *testing.T) {
 
 func TestLOMSCancelOrderReleasesStock(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)
@@ -459,8 +481,10 @@ func TestLOMSCancelOrderReleasesStock(t *testing.T) {
 
 func TestProductOperations(t *testing.T) {
 	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+
 	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.LomsGrpcAddr)
+	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
 	ctx := context.Background()
 	productClient := product.NewProductServiceClient(connLoms)
 	stocksClient := stocks.NewStocksClient(connLoms)

@@ -51,6 +51,10 @@
       "to": "loms/Dockerfile"
     },
     {
+      "from": "docker/notifications/Dockerfile",
+      "to": "notifications/Dockerfile"
+    },
+    {
       "from": "docker/integration-tests/Dockerfile",
       "to": "integration-tests/Dockerfile"
     },
