@@ -1,14 +1,12 @@
 package tests
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"testing"
-	"time"
 
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/cart"
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/product"
@@ -17,42 +15,32 @@ import (
 )
 
 func TestCartListCart(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	cfg, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Test Product",
 		Price: 100,
 	})
 	require.NoError(t, err)
 
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 		Sku:   sku,
 		Count: 10,
 	},
 	)
 	require.NoError(t, err)
 
-	client := cart.NewCartClient(connCart)
 	var userID = rand.N[int64](10e9) + 1
 
-	_, err = client.AddItem(ctx, &cart.AddItemRequest{
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: userID,
 		Sku:    sku, Count: 2,
 	},
 	)
 	require.NoError(t, err)
 
-	resp, err := jsonReq(http.MethodPost, cfg.Clients.CartGatewayAddr+"/v1/cart/list", map[string]int64{"user_id": userID})
+	resp, err := jsonReq(http.MethodPost, cfg.Clients.Cart1GatewayAddr+"/v1/cart/list", map[string]int64{"user_id": userID})
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.True(t, resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusBadRequest,
@@ -68,12 +56,9 @@ func TestCartListCart(t *testing.T) {
 }
 
 func TestLOMSOrderInfo(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	cfg, _ := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-
-	resp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/order/info", map[string]int64{"order_id": 1})
+	resp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/order/info", map[string]int64{"order_id": 1})
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.True(t, resp.StatusCode == http.StatusOK ||
@@ -81,12 +66,9 @@ func TestLOMSOrderInfo(t *testing.T) {
 }
 
 func TestProductInfo(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	cfg, _ := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-
-	createResp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/product/create",
+	createResp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/product/create",
 		map[string]interface{}{"name": "Gateway Product", "price": 100})
 	require.NoError(t, err)
 	defer createResp.Body.Close()
@@ -98,7 +80,7 @@ func TestProductInfo(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, createBody.Sku, uint32(0))
 
-	infoResp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/product/info", map[string]uint32{"sku": createBody.Sku})
+	infoResp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/product/info", map[string]uint32{"sku": createBody.Sku})
 	require.NoError(t, err)
 	defer infoResp.Body.Close()
 	require.Equal(t, http.StatusOK, infoResp.StatusCode)
@@ -113,12 +95,9 @@ func TestProductInfo(t *testing.T) {
 }
 
 func TestStocksInfo(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	cfg, _ := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-
-	createResp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/product/create",
+	createResp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/product/create",
 		map[string]interface{}{"name": "Stock Item", "price": 1})
 	require.NoError(t, err)
 	defer createResp.Body.Close()
@@ -129,13 +108,13 @@ func TestStocksInfo(t *testing.T) {
 	err = json.NewDecoder(createResp.Body).Decode(&createBody)
 	require.NoError(t, err)
 
-	setResp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/stock/set",
+	setResp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/stock/set",
 		map[string]interface{}{"sku": createBody.Sku, "count": 42})
 	require.NoError(t, err)
 	defer setResp.Body.Close()
 	require.Equal(t, http.StatusOK, setResp.StatusCode)
 
-	infoResp, err := jsonReq(http.MethodPost, cfg.Clients.LomsGatewayAddr+"/v1/stock/info",
+	infoResp, err := jsonReq(http.MethodPost, cfg.Clients.Loms1GatewayAddr+"/v1/stock/info",
 		map[string]uint32{"sku": createBody.Sku})
 	require.NoError(t, err)
 	defer infoResp.Body.Close()

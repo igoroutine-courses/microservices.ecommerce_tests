@@ -1,11 +1,9 @@
 package tests
 
 import (
-	"context"
 	"math/rand/v2"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/stocks"
 	"github.com/stretchr/testify/require"
@@ -18,42 +16,32 @@ import (
 )
 
 func TestCartOperations(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Test Product",
 		Price: 100,
 	})
 	require.NoError(t, err)
 
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 		Sku:   sku,
 		Count: 10,
 	},
 	)
 	require.NoError(t, err)
 
-	client := cart.NewCartClient(connCart)
 	var userID = rand.N[int64](10e9) + 1
 
-	_, err = client.AddItem(ctx, &cart.AddItemRequest{
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: userID,
 		Sku:    sku, Count: 2,
 	},
 	)
 	require.NoError(t, err)
 
-	cartListResponse := listCart(t, client, userID)
+	cartListResponse := listCart(t, clients.Cart1, userID)
 	require.Len(t, cartListResponse, 1)
 
 	cartItems := cartListResponse[0]
@@ -62,31 +50,24 @@ func TestCartOperations(t *testing.T) {
 	require.Equal(t, sku, cartItems.GetItems()[0].GetSku())
 	require.EqualValues(t, 2, cartItems.GetItems()[0].GetCount())
 
-	_, err = client.DeleteItem(ctx, &cart.DeleteItemRequest{
+	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
 		UserId: userID,
 		Sku:    sku},
 	)
 	require.NoError(t, err)
 
-	cartListResponseAfterDelete := listCart(t, client, userID)
+	cartListResponseAfterDelete := listCart(t, clients.Cart1, userID)
 	require.Zero(t, len(cartListResponseAfterDelete))
 
-	_, err = client.ClearCart(ctx, &cart.ClearCartRequest{
+	_, err = clients.Cart1.ClearCart(t.Context(), &cart.ClearCartRequest{
 		UserId: userID,
 	})
 	require.NoError(t, err)
 }
 
 func TestCartAddItemProductNotFound(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
-
-	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	ctx := context.Background()
-	client := cart.NewCartClient(connCart)
-
-	_, err := client.AddItem(ctx, &cart.AddItemRequest{
+	_, clients := setup(t)
+	_, err := clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: rand.N[int64](10e9),
 		Sku:    999999999,
 		Count:  1},
@@ -99,26 +80,18 @@ func TestCartAddItemProductNotFound(t *testing.T) {
 }
 
 func TestCartAddItemInsufficientStock(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Low Stock",
 		Price: 1},
 	)
 	require.NoError(t, err)
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{Sku: sku, Count: 1})
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{Sku: sku, Count: 1})
 	require.NoError(t, err)
 
-	client := cart.NewCartClient(connCart)
-	_, err = client.AddItem(ctx, &cart.AddItemRequest{
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: rand.N[int64](10e9),
 		Sku:    sku,
 		Count:  10,
@@ -133,18 +106,7 @@ func TestCartAddItemInsufficientStock(t *testing.T) {
 }
 
 func TestConcurrentStocksAndCartConsistency(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
-
-	waitForServices(t, cfg, 45*time.Second)
-
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	cartClient := cart.NewCartClient(connCart)
+	_, clients := setup(t)
 
 	const numProducts = 5
 	const stockPerProduct = 500
@@ -153,7 +115,7 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 
 	skus := make([]uint32, numProducts)
 	for i := 0; i < numProducts; i++ {
-		createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+		createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 			Name:  "Concurrent Product " + string(rune('A'+i)),
 			Price: uint32(10 + i),
 		})
@@ -164,7 +126,7 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 	var setStockWg sync.WaitGroup
 	for i := 0; i < numProducts; i++ {
 		setStockWg.Go(func() {
-			_, err := stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+			_, err := clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 				Sku:   skus[i],
 				Count: stockPerProduct,
 			})
@@ -186,7 +148,7 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 			for op := 0; op < addOpsPerWorker; op++ {
 				sku := skus[rand.N(len(skus))]
 				count := uint32(rand.N(2) + 1)
-				_, err := cartClient.AddItem(ctx, &cart.AddItemRequest{
+				_, err := clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 					UserId: userID,
 					Sku:    sku,
 					Count:  count,
@@ -207,7 +169,7 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 	cartWg.Wait()
 
 	for userID, expectedCounts := range expected {
-		responses := listCart(t, cartClient, userID)
+		responses := listCart(t, clients.Cart1, userID)
 		gotCounts := make(countMap)
 		for _, r := range responses {
 			for _, it := range r.GetItems() {
@@ -225,42 +187,33 @@ func TestConcurrentStocksAndCartConsistency(t *testing.T) {
 	}
 
 	for _, sku := range skus {
-		resp, err := stocksClient.GetStock(ctx, &stocks.GetStockRequest{Sku: sku})
+		resp, err := clients.Stocks1.GetStock(t.Context(), &stocks.GetStockRequest{Sku: sku})
 		require.NoError(t, err)
 		require.Equal(t, uint64(stockPerProduct), resp.GetCount(), "sku %d stock", sku)
 	}
 }
 
 func TestCheckoutCart(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
-
-	waitForServices(t, cfg, 45*time.Second)
-	connCart := dial(t, cfg.Clients.CartGrpcAddr)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	_, clients := setup(t)
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Checkout Product",
 		Price: 50,
 	})
 	require.NoError(t, err)
 
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{Sku: sku, Count: 5})
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{Sku: sku, Count: 5})
 	require.NoError(t, err)
 
-	cartClient := cart.NewCartClient(connCart)
 	userID := rand.N[int64](10e9)
-	_, err = cartClient.AddItem(ctx, &cart.AddItemRequest{
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: userID,
 		Sku:    sku,
 		Count:  2,
 	})
 	require.NoError(t, err)
 
-	checkoutResp, err := cartClient.CheckoutCart(ctx, &cart.CheckoutCartRequest{
+	checkoutResp, err := clients.Cart1.CheckoutCart(t.Context(), &cart.CheckoutCartRequest{
 		UserId: userID,
 	})
 	require.NoError(t, err)
@@ -268,29 +221,21 @@ func TestCheckoutCart(t *testing.T) {
 }
 
 func TestLOMSOrderOperations(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	lomsClient := loms.NewLomsClient(connLoms)
-
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Order Product",
 		Price: 200,
 	})
 	require.NoError(t, err)
 	sku := createResp.GetSku()
 
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{Sku: sku, Count: 100})
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{Sku: sku, Count: 100})
 	require.NoError(t, err)
 
 	var userID = rand.N[int64](10e9)
 
-	orderResp, err := lomsClient.CreateOrder(ctx, &loms.CreateOrderRequest{
+	orderResp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
 		UserId: userID,
 		Items:  []*loms.Item{{Sku: sku, Count: 3}},
 	})
@@ -298,7 +243,7 @@ func TestLOMSOrderOperations(t *testing.T) {
 	orderID := orderResp.GetOrderId()
 	require.Greater(t, orderID, int64(0))
 
-	getResp, err := lomsClient.GetOrder(ctx, &loms.GetOrderRequest{
+	getResp, err := clients.Loms1.GetOrder(t.Context(), &loms.GetOrderRequest{
 		OrderId: orderID,
 	})
 	require.NoError(t, err)
@@ -306,12 +251,12 @@ func TestLOMSOrderOperations(t *testing.T) {
 	require.Equal(t, userID, getResp.GetUserId())
 	require.Len(t, getResp.GetItems(), 1)
 
-	_, err = lomsClient.PayOrder(ctx, &loms.PayOrderRequest{
+	_, err = clients.Loms1.PayOrder(t.Context(), &loms.PayOrderRequest{
 		OrderId: orderID,
 	})
 	require.NoError(t, err)
 
-	getResp2, err := lomsClient.GetOrder(ctx, &loms.GetOrderRequest{
+	getResp2, err := clients.Loms1.GetOrder(t.Context(), &loms.GetOrderRequest{
 		OrderId: orderID,
 	})
 	require.NoError(t, err)
@@ -319,13 +264,8 @@ func TestLOMSOrderOperations(t *testing.T) {
 }
 
 func TestGRPC_LOMS_GetOrder_NotFound(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
-
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	_, err := loms.NewLomsClient(connLoms).GetOrder(ctx, &loms.GetOrderRequest{
+	_, clients := setup(t)
+	_, err := clients.Loms1.GetOrder(t.Context(), &loms.GetOrderRequest{
 		OrderId: 27272727272727,
 	})
 
@@ -337,38 +277,30 @@ func TestGRPC_LOMS_GetOrder_NotFound(t *testing.T) {
 }
 
 func TestLOMSPayOrderInvalidStatus(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	lomsClient := loms.NewLomsClient(connLoms)
-
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name: "Pay Twice", Price: 1,
 	})
 	require.NoError(t, err)
 
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 		Sku:   sku,
 		Count: 10,
 	})
 	require.NoError(t, err)
 
-	orderResp, err := lomsClient.CreateOrder(ctx, &loms.CreateOrderRequest{
+	orderResp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
 		UserId: 999030,
 		Items:  []*loms.Item{{Sku: sku, Count: 1}}})
 	require.NoError(t, err)
 	orderID := orderResp.GetOrderId()
 
-	_, err = lomsClient.PayOrder(ctx, &loms.PayOrderRequest{OrderId: orderID})
+	_, err = clients.Loms1.PayOrder(t.Context(), &loms.PayOrderRequest{OrderId: orderID})
 	require.NoError(t, err)
 
-	_, err = lomsClient.PayOrder(ctx, &loms.PayOrderRequest{OrderId: orderID})
+	_, err = clients.Loms1.PayOrder(t.Context(), &loms.PayOrderRequest{OrderId: orderID})
 	require.Error(t, err)
 	st, ok := status.FromError(err)
 
@@ -377,38 +309,30 @@ func TestLOMSPayOrderInvalidStatus(t *testing.T) {
 }
 
 func TestLOMSCancelOrderInvalidStatus(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	lomsClient := loms.NewLomsClient(connLoms)
-
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name: "Cancel Paid", Price: 1,
 	})
 	require.NoError(t, err)
 
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 		Sku: sku, Count: 10,
 	})
 	require.NoError(t, err)
 
-	orderResp, err := lomsClient.CreateOrder(ctx, &loms.CreateOrderRequest{
+	orderResp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
 		UserId: 999040, Items: []*loms.Item{{Sku: sku, Count: 1}},
 	})
 	require.NoError(t, err)
 
 	orderID := orderResp.GetOrderId()
-	_, err = lomsClient.PayOrder(ctx, &loms.PayOrderRequest{OrderId: orderID})
+	_, err = clients.Loms1.PayOrder(t.Context(), &loms.PayOrderRequest{OrderId: orderID})
 
 	require.NoError(t, err)
 
-	_, err = lomsClient.CancelOrder(ctx, &loms.CancelOrderRequest{OrderId: orderID})
+	_, err = clients.Loms1.CancelOrder(t.Context(), &loms.CancelOrderRequest{OrderId: orderID})
 	require.Error(t, err)
 	st, ok := status.FromError(err)
 	require.True(t, ok)
@@ -416,21 +340,16 @@ func TestLOMSCancelOrderInvalidStatus(t *testing.T) {
 }
 
 func TestLOMSCreateOrderInsufficientStock(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{Name: "No Stock", Price: 1})
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{Name: "No Stock", Price: 1})
 	require.NoError(t, err)
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{Sku: sku, Count: 0})
+
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{Sku: sku, Count: 0})
 	require.NoError(t, err)
 
-	_, err = loms.NewLomsClient(connLoms).CreateOrder(ctx, &loms.CreateOrderRequest{
+	_, err = clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
 		UserId: 999050,
 		Items:  []*loms.Item{{Sku: sku, Count: 5}},
 	})
@@ -442,64 +361,50 @@ func TestLOMSCreateOrderInsufficientStock(t *testing.T) {
 }
 
 func TestLOMSCancelOrderReleasesStock(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-	lomsClient := loms.NewLomsClient(connLoms)
-
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
 		Name:  "Cancel Stock",
 		Price: 1,
 	})
 	require.NoError(t, err)
+
 	sku := createResp.GetSku()
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
 		Sku:   sku,
 		Count: 10,
 	})
 	require.NoError(t, err)
 
-	orderResp, err := lomsClient.CreateOrder(ctx, &loms.CreateOrderRequest{
+	orderResp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
 		UserId: 999060,
 		Items:  []*loms.Item{{Sku: sku, Count: 3}},
 	})
 	require.NoError(t, err)
 	orderID := orderResp.GetOrderId()
-	stockAfterReserve, _ := stocksClient.GetStock(ctx, &stocks.GetStockRequest{Sku: sku})
+	stockAfterReserve, _ := clients.Stocks1.GetStock(t.Context(), &stocks.GetStockRequest{Sku: sku})
 	require.Equal(t, uint64(7), stockAfterReserve.GetCount())
 
-	_, err = lomsClient.CancelOrder(ctx, &loms.CancelOrderRequest{OrderId: orderID})
+	_, err = clients.Loms1.CancelOrder(t.Context(), &loms.CancelOrderRequest{OrderId: orderID})
 	require.NoError(t, err)
-	stockAfterCancel, _ := stocksClient.GetStock(ctx, &stocks.GetStockRequest{Sku: sku})
+	stockAfterCancel, _ := clients.Stocks1.GetStock(t.Context(), &stocks.GetStockRequest{Sku: sku})
 	require.Equal(t, uint64(10), stockAfterCancel.GetCount())
 }
 
 func TestProductOperations(t *testing.T) {
-	cfg := loadConfig(t)
-	cfg.cleanupDB(t)
+	_, clients := setup(t)
 
-	waitForServices(t, cfg, 45*time.Second)
-	connLoms := dial(t, cfg.Clients.LomsGrpcAddr)
-	ctx := context.Background()
-	productClient := product.NewProductServiceClient(connLoms)
-	stocksClient := stocks.NewStocksClient(connLoms)
-
-	createResp, err := productClient.CreateProduct(ctx, &product.CreateProductRequest{Name: "Proto Test", Price: 42})
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{Name: "Proto Test", Price: 42})
 	require.NoError(t, err)
 	sku := createResp.GetSku()
-	getResp, err := productClient.GetProduct(ctx, &product.GetProductRequest{Sku: sku})
+	getResp, err := clients.Product1.GetProduct(t.Context(), &product.GetProductRequest{Sku: sku})
 	require.NoError(t, err)
 	require.Equal(t, "Proto Test", getResp.GetName())
 	require.Equal(t, uint32(42), getResp.GetPrice())
 
-	_, err = stocksClient.SetStock(ctx, &stocks.SetStockRequest{Sku: sku, Count: 77})
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{Sku: sku, Count: 77})
 	require.NoError(t, err)
-	getStockResp, err := stocksClient.GetStock(ctx, &stocks.GetStockRequest{Sku: sku})
+	getStockResp, err := clients.Stocks1.GetStock(t.Context(), &stocks.GetStockRequest{Sku: sku})
 	require.NoError(t, err)
 	require.Equal(t, uint64(77), getStockResp.GetCount())
 }

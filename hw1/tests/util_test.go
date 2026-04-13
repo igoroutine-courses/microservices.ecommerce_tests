@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,20 +17,30 @@ import (
 
 	"github.com/caarlos0/env/v10"
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/cart"
+	"github.com/igoroutine-courses/microservices.ecommerce.tests/loms"
+	"github.com/igoroutine-courses/microservices.ecommerce.tests/product"
+	"github.com/igoroutine-courses/microservices.ecommerce.tests/stocks"
 	_ "github.com/lib/pq"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/status"
 )
 
 type config struct {
 	db *sql.DB
 
 	Clients struct {
-		CartGrpcAddr    string `env:"CART_GRPC_ADDR" envDefault:"localhost:50051"`
-		CartGatewayAddr string `env:"CART_GATEWAY_ADDR" envDefault:"localhost:8080"`
-		LomsGrpcAddr    string `env:"LOMS_GRPC_ADDR" envDefault:"localhost:50052"`
-		LomsGatewayAddr string `env:"LOMS_GATEWAY_ADDR" envDefault:"localhost:8081"`
+		Cart1GrpcAddr    string `env:"CART1_GRPC_ADDR" envDefault:"localhost:50051"`
+		Cart2GrpcAddr    string `env:"CART2_GRPC_ADDR" envDefault:"localhost:50061"`
+		Cart1GatewayAddr string `env:"CART1_GATEWAY_ADDR" envDefault:"localhost:8080"`
+		Cart2GatewayAddr string `env:"CART2_GATEWAY_ADDR" envDefault:"localhost:8090"`
+
+		Loms1GrpcAddr    string `env:"LOMS1_GRPC_ADDR" envDefault:"localhost:50052"`
+		Loms2GrpcAddr    string `env:"LOMS2_GRPC_ADDR" envDefault:"localhost:50062"`
+		Loms1GatewayAddr string `env:"LOMS1_GATEWAY_ADDR" envDefault:"localhost:8081"`
+		Loms2GatewayAddr string `env:"LOMS2_GATEWAY_ADDR" envDefault:"localhost:8091"`
 	}
 
 	PG struct {
@@ -41,6 +52,41 @@ type config struct {
 	}
 }
 
+type testClients struct {
+	Cart1    cart.CartClient
+	Cart2    cart.CartClient
+	Loms1    loms.LomsClient
+	Loms2    loms.LomsClient
+	Product1 product.ProductServiceClient
+	Product2 product.ProductServiceClient
+	Stocks1  stocks.StocksClient
+	Stocks2  stocks.StocksClient
+}
+
+func setup(t *testing.T) (*config, *testClients) {
+	t.Helper()
+
+	cfg := loadConfig(t)
+	cfg.cleanupDB(t)
+	waitForServices(t, cfg, 45*time.Second)
+
+	connCart1 := dial(t, cfg.Clients.Cart1GrpcAddr)
+	connCart2 := dial(t, cfg.Clients.Cart2GrpcAddr)
+	connLoms1 := dial(t, cfg.Clients.Loms1GrpcAddr)
+	connLoms2 := dial(t, cfg.Clients.Loms2GrpcAddr)
+
+	return cfg, &testClients{
+		Cart1:    cart.NewCartClient(connCart1),
+		Cart2:    cart.NewCartClient(connCart2),
+		Loms1:    loms.NewLomsClient(connLoms1),
+		Loms2:    loms.NewLomsClient(connLoms2),
+		Product1: product.NewProductServiceClient(connLoms1),
+		Product2: product.NewProductServiceClient(connLoms2),
+		Stocks1:  stocks.NewStocksClient(connLoms1),
+		Stocks2:  stocks.NewStocksClient(connLoms2),
+	}
+}
+
 func loadConfig(t *testing.T) *config {
 	t.Helper()
 
@@ -48,8 +94,11 @@ func loadConfig(t *testing.T) *config {
 	err := env.Parse(&cfg)
 	require.NoError(t, err)
 
-	cfg.Clients.CartGatewayAddr = normalizeURL(t, cfg.Clients.CartGatewayAddr)
-	cfg.Clients.LomsGatewayAddr = normalizeURL(t, cfg.Clients.LomsGatewayAddr)
+	cfg.Clients.Cart1GatewayAddr = normalizeURL(t, cfg.Clients.Cart1GatewayAddr)
+	cfg.Clients.Cart2GatewayAddr = normalizeURL(t, cfg.Clients.Cart2GatewayAddr)
+
+	cfg.Clients.Loms1GatewayAddr = normalizeURL(t, cfg.Clients.Loms1GatewayAddr)
+	cfg.Clients.Loms2GatewayAddr = normalizeURL(t, cfg.Clients.Loms2GatewayAddr)
 
 	cfg.initDB(t)
 
@@ -163,8 +212,11 @@ func WaitForLomsGateway(t *testing.T, baseURL string, timeout time.Duration) {
 
 func waitForServices(t *testing.T, cfg *config, timeout time.Duration) {
 	t.Helper()
-	WaitForCartGateway(t, cfg.Clients.CartGatewayAddr, timeout)
-	WaitForLomsGateway(t, cfg.Clients.LomsGatewayAddr, timeout) // depends on notifications
+	WaitForCartGateway(t, cfg.Clients.Cart1GatewayAddr, timeout)
+	WaitForCartGateway(t, cfg.Clients.Cart2GatewayAddr, timeout)
+
+	WaitForLomsGateway(t, cfg.Clients.Loms1GatewayAddr, timeout) // depends on notifications
+	WaitForLomsGateway(t, cfg.Clients.Loms2GatewayAddr, timeout) // depends on notifications
 }
 
 func jsonReq(method, url string, body any) (*http.Response, error) {
@@ -260,4 +312,92 @@ func cleanDB(ctx context.Context, db *sql.DB) error {
 
 	_, err = db.ExecContext(ctx, query)
 	return err
+}
+
+func createProductWithStock(
+	t *testing.T,
+	productClient product.ProductServiceClient,
+	stocksClient stocks.StocksClient,
+	name string,
+	price uint32,
+	count uint64,
+) uint32 {
+	t.Helper()
+
+	createResp, err := productClient.CreateProduct(t.Context(), &product.CreateProductRequest{
+		Name:  name,
+		Price: price,
+	})
+	require.NoError(t, err)
+
+	sku := createResp.GetSku()
+
+	_, err = stocksClient.SetStock(t.Context(), &stocks.SetStockRequest{
+		Sku:   sku,
+		Count: count,
+	})
+	require.NoError(t, err)
+
+	return sku
+}
+
+func requireCartHasItem(
+	t *testing.T,
+	client cart.CartClient,
+	userID int64,
+	sku uint32,
+	count uint32,
+) {
+	t.Helper()
+
+	responses := listCart(t, client, userID)
+	require.Len(t, responses, 1)
+	require.Len(t, responses[0].GetItems(), 1)
+
+	item := responses[0].GetItems()[0]
+	require.Equal(t, sku, item.GetSku())
+	require.EqualValues(t, count, item.GetCount())
+}
+
+func createOrderForRaceTest(
+	t *testing.T,
+	clients *testClients,
+	stock uint64,
+	orderCount uint32,
+) (sku uint32, orderID int64, userID int64) {
+	t.Helper()
+
+	sku = createProductWithStock(
+		t,
+		clients.Product1,
+		clients.Stocks1,
+		"Race Product",
+		100,
+		stock,
+	)
+
+	userID = rand.N[int64](10e9) + 1
+
+	resp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
+		UserId: userID,
+		Items: []*loms.Item{
+			{Sku: sku, Count: orderCount},
+		},
+	})
+	require.NoError(t, err)
+
+	return sku, resp.GetOrderId(), userID
+}
+
+func grpcCode(err error) codes.Code {
+	if err == nil {
+		return codes.OK
+	}
+
+	st, ok := status.FromError(err)
+	if !ok {
+		return codes.Unknown
+	}
+
+	return st.Code()
 }

@@ -31,6 +31,14 @@
       "to": "integration-tests/util_test.go"
     },
     {
+      "from": "tests/db_test.go",
+      "to": "integration-tests/db_test.go"
+    },
+    {
+      "from": "tests/notifications_test.go",
+      "to": "integration-tests/notifications_test.go"
+    },
+    {
       "from": "docker-compose/docker-compose.ci.yml",
       "to": "docker-compose.ci.yml"
     },
