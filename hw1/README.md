@@ -342,6 +342,15 @@ if callbackAddr == "" {
 Для проверки корректности вашего решения используются тесты в [notifications_test.go](./integration-tests/notifications_test.go). Они в том числе умеют эмулировать
 долгий ответ от внешней системы.
 
+Параметры для outbox задаются в переменных окружения:
+
+```yaml
+OUTBOX_WORKERS: "1"
+OUTBOX_BATCH_SIZE: "10"
+OUTBOX_FETCH_PERIOD: "200ms"
+OUTBOX_IN_PROGRESS_TTL: "10s"
+```
+
 
 ## Локальный запуск
 
