@@ -17,8 +17,10 @@ services:
       POSTGRES_PASSWORD: "12345"
       LOMS_GRPC_ADDR: "loms:50052"
     depends_on:
-      - postgres
-      - loms
+      postgres:
+        condition: service_healthy
+      loms:
+        condition: service_started
     ports:
       - "8080:8080"
       - "50051:50051"
@@ -40,8 +42,10 @@ services:
       POSTGRES_PASSWORD: "12345"
       NOTIFICATIONS_GRPC_ADDR: "notifications:50053"
     depends_on:
-      - postgres
-      - notifications
+      postgres:
+        condition: service_healthy
+      notifications:
+        condition: service_started
     ports:
       - "50052:50052"
       - "8081:8081"
