@@ -38,7 +38,7 @@
 ![img_6.png](./docs/img/img_6.png)
 
 
-## Описание
+# Часть 1
 
 Как грамотный архитектор, вы решили начать с [UML-диаграмм](https://ru.wikipedia.org/wiki/Диаграмма_(UML)) для основных сценариев.
 
@@ -68,9 +68,7 @@ loms:
 
 ![loms-order-cancel.png](./docs/img/loms-order-cancel.png)
 
-Вам необходимо разработать сервисы [loms](./loms) и [cart](./cart), реализовав и протестировав вышеперечисленные сценарии.
-
-## Задание
+На первом шаге вам необходимо разработать сервисы [loms](./loms) и [cart](./cart), реализовав и протестировав вышеперечисленные сценарии.
 
 Для вашего удобства в шаблоне репозитория лежат заготовки с кодом. Вам даны .proto файлы для сервисов cart и loms.
 
@@ -177,7 +175,7 @@ func NewInMemoryRepository() *inMemoryRepository {
 
 > При внимательном рассмотрении можно заметить, что in-memory хранилище не обеспечивает персистентность данных и полноценные транзакционные гарантии.
 > При перезапуске данные теряются. Более того, если выполнение запроса будет прервано, в хранилище может появиться неконсистентное состояние.
-> Мы исправим это в следующих заданиях.
+> Мы исправим это в следующих частях.
 
 ## Тестирование
 
@@ -203,18 +201,161 @@ type (
 После чего написать юнит-тесты, желательно покрыть тестами всё, в CI проверяется покрытие кода > 60%. Добавление сгенерированных моков в репозиторий считается ошибкой,
 необходимо генерировать их (`task generate` запускает `go generate`).
 
+Более того, помимо ваших тестов решение будет проверяться интеграционными тестами курса. [grpc_test](./integration-tests/grpc_test) и [grpc_gateway_test.go](./integration-tests/grpc_gateway_test.go)
+независимо от других частей проверяют первую часть задания.
+
+# Часть 2
+
+Как обсуждалось, in-memory хранилище имеет ряд существенных недостатков. В этой части вам необходимо интегрировать
+ваши сервисы с СУБД [PostgreSQL](https://www.postgresql.org/). Для начала стоит спроектировать архитектуру базы данных и научиться
+применять её с помощью миграций, в этом задании рекомендуется использовать [goose](https://github.com/pressly/goose).
+
+```go
+var embedMigrations embed.FS
+
+func SetupPostgres(pool *pgxpool.Pool, logger *zap.Logger) {
+	goose.SetBaseFS(embedMigrations)
+	if err := goose.SetDialect("postgres"); err != nil {
+		logger.Error("can not set dialect in goose", zap.Error(err))
+		os.Exit(-1)
+	}
+
+	db := stdlib.OpenDBFromPool(pool)
+	if err := goose.Up(db, "migrations"); err != nil {
+		logger.Error("can not setup migrations", zap.Error(err))
+		os.Exit(-1)
+	}
+}
+```
+
+```sql
+-- +goose Up
+-- +goose StatementBegin
+CREATE SCHEMA IF NOT EXISTS loms;
+
+CREATE TYPE loms.order_status AS ENUM ('new', 'awaiting payment', 'failed', 'paid', 'cancelled');
+
+...
+```
+
+Далее необходимо поддержать SQL-запросы к базе данных. Для генерации кода на Go рекомендуется использовать [sqlc](https://github.com/sqlc-dev/sqlc).
+
+```sql
+-- name: InsertOrder :one
+INSERT INTO loms.orders (id, user_id, status)
+VALUES (sqlc.arg(id), sqlc.arg(user_id), sqlc.arg(status)::loms.order_status)
+RETURNING id, user_id, status, created_at, updated_at;
+```
+
+```go
+const insertOrder = `-- name: InsertOrder :one
+INSERT INTO loms.orders (id, user_id, status)
+VALUES ($1, $2, $3::loms.order_status)
+RETURNING id, user_id, status, created_at, updated_at
+`
+
+type InsertOrderParams struct {
+	ID     int64           `json:"id"`
+	UserID int64           `json:"user_id"`
+	Status LomsOrderStatus `json:"status"`
+}
+
+func (q *Queries) InsertOrder(ctx context.Context, arg InsertOrderParams) (LomsOrder, error) {
+	row := q.db.QueryRow(ctx, insertOrder, arg.ID, arg.UserID, arg.Status)
+	var i LomsOrder
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+```
+
+Для проверки корректности вашего решения используются тесты в [db_test.go](./integration-tests/db_test.go). Например, поднимаются
+два экземпляра приложения, чтобы полноценно проверить различные сценарии использования:
+
+```yaml
+  loms:
+    image: loms
+    hostname: loms
+    build:
+      context: .
+      dockerfile: ./loms/Dockerfile
+    restart: unless-stopped
+    environment:
+      ...
+      postgres:
+        condition: service_healthy
+      notifications:
+        condition: service_started
+
+  loms-2:
+    image: loms
+    hostname: loms-2
+    build:
+      context: .
+      dockerfile: ./loms/Dockerfile
+    restart: unless-stopped
+    environment:
+      ...
+    depends_on:
+      postgres:
+        condition: service_healthy
+      notifications:
+        condition: service_started
+      loms:
+        condition: service_started
+```
+
+# Часть 3
+
+В этой части к вам внезапно пришли заказчики и объявили, что нужно срочно интегрироваться с новым мессенджером, чтобы присылать туда уведомления
+о статусах заказа. Для этого появился сервис `notifications`, вам предстоит самим разработать для него API.
+На текущем этапе ваш сервис должен просто пересылать статус заказа по URL'у из переменной окружения:
+
+```go
+CallbackAddr string `env:"CALLBACK_ADDR" envDefault:""` // config
+
+...
+
+callbackAddr := strings.TrimSpace(n.cfg.Clients.CallbackAddr)
+
+type callbackPayload struct {
+	UserID  int64  `json:"user_id"`
+	OrderID int64  `json:"order_id"`
+	Status  string `json:"status"`
+}
+
+if callbackAddr == "" {
+	return &emptypb.Empty{}, nil
+}
+```
+
+Однако в `loms` вы бы не хотели, чтобы создание заказов зависело от скорости ответа внешнего сервиса. Поэтому необходимо решить эту проблему,
+присылая уведомления в `notifications` асинхронно. Для решения этой задачи предлагается поддержать архитектурный паттерн `outbox`.
+
+![img_3.png](./docs/img/sequence_1.png)
+
+Для проверки корректности вашего решения используются тесты в [notifications_test.go](./integration-tests/notifications_test.go). Они в том числе умеют эмулировать
+долгий ответ от внешней системы.
+
+
 ## Локальный запуск
 
 - `task update hw=hw1` — скачивает docker-compose файлы для тестирования и локального запуска
 - `task frontend` — запускает frontend, перед выполнением необходимо установить [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
-- `task backend` — запускает backend (loms и cart)
+- `task backend` — запускает backend
 - На Windows без WSL многое может не работать
 
 
 ## Особенности реализации
-* В этом задании можно не заводить отдельные структуры под слой repository.
-* Настоятельно рекомендуется писать комментарии для проверяющих, чтобы обосновать свою точку зрения в выборе
+* В этом задании можно не заводить отдельные структуры под слой repository, можно использовать общий entity слой.
+* **Настоятельно** рекомендуется писать комментарии для проверяющих, чтобы обосновать свою точку зрения в выборе
 того или иного компромисса (trade-off’а).
+* Крайне рекомендуется осознать механизм работы интеграционных тестов
 
 
 ## Сдача
