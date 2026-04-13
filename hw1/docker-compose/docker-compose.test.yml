@@ -10,10 +10,14 @@ services:
       - cart
       - loms
     environment:
-      CART_GRPC_ADDR: "cart:50051"
-      CART_GATEWAY_ADDR: "cart:8080"
-      LOMS_GRPC_ADDR: "loms:50052"
-      LOMS_GATEWAY_ADDR: "loms:8081"
+      CART1_GRPC_ADDR: "cart:50051"
+      CART2_GRPC_ADDR: "cart-2:50061"
+      CART1_GATEWAY_ADDR: "cart:8080"
+      CART2_GATEWAY_ADDR: "cart-2:8090"
+      LOMS1_GRPC_ADDR: "loms:50052"
+      LOMS2_GRPC_ADDR: "loms-2:50062"
+      LOMS1_GATEWAY_ADDR: "loms:8081"
+      LOMS2_GATEWAY_ADDR: "loms-2:8091"
       POSTGRES_HOST: "postgres"
       POSTGRES_PORT: "5432"
       POSTGRES_DB: "ecommerce"
