@@ -68,6 +68,10 @@ services:
       POSTGRES_USER: "ecommerce_user"
       POSTGRES_PASSWORD: "12345"
       NOTIFICATIONS_GRPC_ADDR: "notifications:50053"
+      OUTBOX_WORKERS: "1"
+      OUTBOX_BATCH_SIZE: "10"
+      OUTBOX_FETCH_PERIOD: "200ms"
+      OUTBOX_IN_PROGRESS_TTL: "1s"
     depends_on:
       postgres:
         condition: service_healthy
@@ -93,6 +97,10 @@ services:
       POSTGRES_USER: "ecommerce_user"
       POSTGRES_PASSWORD: "12345"
       NOTIFICATIONS_GRPC_ADDR: "notifications:50053"
+      OUTBOX_WORKERS: "1"
+      OUTBOX_BATCH_SIZE: "10"
+      OUTBOX_FETCH_PERIOD: "200ms"
+      OUTBOX_IN_PROGRESS_TTL: "1s"
     depends_on:
       postgres:
         condition: service_healthy
