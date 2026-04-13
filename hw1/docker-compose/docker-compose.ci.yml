@@ -96,7 +96,6 @@ services:
       GRPC_PORT: "50053"
 
   postgres:
-    container_name: 'postgres'
     image: postgres:17
     restart: always
     environment:
