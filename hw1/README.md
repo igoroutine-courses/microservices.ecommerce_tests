@@ -183,7 +183,7 @@ func NewInMemoryRepository() *inMemoryRepository {
 
 Пример:
 ```go
-//go:generate mockgen -source=cart.go -destination=mocks/cart_mocks.go -package=mocks
+//go:generate mockgen -source=cart.go -destination=mocks/cart_mock.go -package=mocks
 type (
 	ItemService interface {
 		AddItem(ctx context.Context, userID int64, sku, count uint32) error
