@@ -122,6 +122,11 @@ services:
     environment:
       CALLBACK_ADDR: ""
       GRPC_PORT: "50053"
+      POSTGRES_HOST: "postgres"
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: "ecommerce"
+      POSTGRES_USER: "ecommerce_user"
+      POSTGRES_PASSWORD: "12345"
     ports:
       - "50053:50053"
 
