@@ -36,7 +36,8 @@ func TestCartOperations(t *testing.T) {
 
 	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: userID,
-		Sku:    sku, Count: 2,
+		Sku:    sku,
+		Count:  2,
 	},
 	)
 	require.NoError(t, err)
@@ -52,8 +53,8 @@ func TestCartOperations(t *testing.T) {
 
 	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
 		UserId: userID,
-		Sku:    sku},
-	)
+		Sku:    sku,
+	})
 	require.NoError(t, err)
 
 	cartListResponseAfterDelete := listCart(t, clients.Cart1, userID)
@@ -70,8 +71,8 @@ func TestCartAddItemProductNotFound(t *testing.T) {
 	_, err := clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
 		UserId: rand.N[int64](10e9),
 		Sku:    999999999,
-		Count:  1},
-	)
+		Count:  1,
+	})
 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -95,8 +96,7 @@ func TestCartAddItemInsufficientStock(t *testing.T) {
 		UserId: rand.N[int64](10e9),
 		Sku:    sku,
 		Count:  10,
-	},
-	)
+	})
 
 	require.Error(t, err)
 	st, ok := status.FromError(err)
@@ -407,4 +407,113 @@ func TestProductOperations(t *testing.T) {
 	getStockResp, err := clients.Stocks1.GetStock(t.Context(), &stocks.GetStockRequest{Sku: sku})
 	require.NoError(t, err)
 	require.Equal(t, uint64(77), getStockResp.GetCount())
+}
+
+func TestCartDeleteExistingItem(t *testing.T) {
+	_, clients := setup(t)
+
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
+		Name:  "Delete Test Product",
+		Price: 100,
+	})
+	require.NoError(t, err)
+	sku := createResp.GetSku()
+
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
+		Sku:   sku,
+		Count: 10,
+	})
+	require.NoError(t, err)
+
+	userID := rand.N[int64](10e9) + 1
+
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
+		UserId: userID,
+		Sku:    sku,
+		Count:  2,
+	})
+	require.NoError(t, err)
+
+	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
+		UserId: userID,
+		Sku:    sku,
+	})
+	require.NoError(t, err)
+
+	cartListResponse := listCart(t, clients.Cart1, userID)
+	require.Zero(t, len(cartListResponse))
+}
+
+func TestCartDeleteItemIdempotent(t *testing.T) {
+	_, clients := setup(t)
+
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
+		Name:  "Idempotent Delete Product",
+		Price: 100,
+	})
+	require.NoError(t, err)
+	sku := createResp.GetSku()
+
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
+		Sku:   sku,
+		Count: 10,
+	})
+	require.NoError(t, err)
+
+	userID := rand.N[int64](10e9) + 1
+
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
+		UserId: userID,
+		Sku:    sku,
+		Count:  2,
+	})
+	require.NoError(t, err)
+
+	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
+		UserId: userID,
+		Sku:    sku,
+	})
+	require.NoError(t, err)
+
+	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
+		UserId: userID, Sku: sku,
+	})
+	require.NoError(t, err)
+}
+
+func TestCartDeleteNonExistentSkuKeepsCart(t *testing.T) {
+	_, clients := setup(t)
+
+	createResp, err := clients.Product1.CreateProduct(t.Context(), &product.CreateProductRequest{
+		Name:  "Keep In Cart Product",
+		Price: 100,
+	})
+	require.NoError(t, err)
+	sku := createResp.GetSku()
+
+	_, err = clients.Stocks1.SetStock(t.Context(), &stocks.SetStockRequest{
+		Sku:   sku,
+		Count: 10,
+	})
+	require.NoError(t, err)
+
+	userID := rand.N[int64](10e9) + 1
+
+	_, err = clients.Cart1.AddItem(t.Context(), &cart.AddItemRequest{
+		UserId: userID,
+		Sku:    sku,
+		Count:  2,
+	})
+	require.NoError(t, err)
+
+	_, err = clients.Cart1.DeleteItem(t.Context(), &cart.DeleteItemRequest{
+		UserId: userID,
+		Sku:    999999999,
+	})
+	require.NoError(t, err)
+
+	cartListResponse := listCart(t, clients.Cart1, userID)
+	require.Len(t, cartListResponse, 1)
+	require.Equal(t, sku, cartListResponse[0].GetItems()[0].GetSku())
+	require.EqualValues(t, 2, cartListResponse[0].GetItems()[0].GetCount())
 }
