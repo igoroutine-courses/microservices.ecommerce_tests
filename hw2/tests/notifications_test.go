@@ -42,6 +42,11 @@ func TestCreateOrderSucceedsWhenNotificationCallbackFails(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return callbackStore.attemptsByOrder(orderID) >= 1
 	}, 5*time.Second, 100*time.Millisecond)
+
+	callbackStore.SetFail(false)
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(orderID) >= 1
+	}, 8*time.Second, 100*time.Millisecond)
 }
 
 func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.T) {
