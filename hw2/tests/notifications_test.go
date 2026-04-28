@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -11,6 +12,11 @@ import (
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/loms"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMain(m *testing.M) {
+	startCallbackServer()
+	os.Exit(m.Run())
+}
 
 type callbackRequest struct {
 	UserID  int64  `json:"user_id"`
@@ -38,7 +44,7 @@ func TestCreateOrderSucceedsWhenNotificationCallbackFails(t *testing.T) {
 	}, 5*time.Second, 100*time.Millisecond)
 }
 
-func TestOutboxRetriesAndEventuallyDeliversNotification(t *testing.T) {
+func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.T) {
 	ensureCallbackServer(t)
 	callbackStore.SetFail(true)
 
@@ -57,6 +63,8 @@ func TestOutboxRetriesAndEventuallyDeliversNotification(t *testing.T) {
 	require.Eventually(t, func() bool {
 		return callbackStore.successesByOrder(orderID) >= 1
 	}, 8*time.Second, 100*time.Millisecond)
+
+	require.GreaterOrEqual(t, callbackStore.attemptsByOrder(orderID), 2)
 }
 
 func TestOutboxDoesNotSendDuplicateNotificationAfterSuccess(t *testing.T) {
@@ -175,13 +183,19 @@ var (
 
 func ensureCallbackServer(t *testing.T) {
 	t.Helper()
+	startCallbackServer()
+	callbackStore.Reset()
+}
 
+func startCallbackServer() {
 	callbackSrvOnce.Do(func() {
 		mux := http.NewServeMux()
 		mux.Handle("/", callbackStore)
 
 		ln, err := net.Listen("tcp", ":8080")
-		require.NoError(t, err)
+		if err != nil {
+			panic(err)
+		}
 
 		srv := &http.Server{
 			Handler:           mux,
@@ -192,8 +206,6 @@ func ensureCallbackServer(t *testing.T) {
 			_ = srv.Serve(ln)
 		}()
 	})
-
-	callbackStore.Reset()
 }
 
 func createOrderForNotificationTest(t *testing.T, clients *testClients) (orderID int64) {
