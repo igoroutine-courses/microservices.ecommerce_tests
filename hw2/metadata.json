@@ -1,0 +1,83 @@
+{
+  "_comment": "TODO use branch main",
+  "ref": "feature/hw2-tests",
+  "version_path": "version.txt",
+  "files": [
+    {
+      "from": "proto/cart/util_cart_pb.go",
+      "to": "integration-tests/cart/util_cart_pb.go"
+    },
+    {
+      "from": "proto/loms/util_loms_pb.go",
+      "to": "integration-tests/loms/util_loms_pb.go"
+    },
+    {
+      "from": "proto/product/util_product_pb.go",
+      "to": "integration-tests/product/util_product_pb.go"
+    },
+    {
+      "from": "proto/stocks/util_stocks_pb.go",
+      "to": "integration-tests/stocks/util_stocks_pb.go"
+    },
+    {
+      "from": "tests/grpc_test.go",
+      "to": "integration-tests/grpc_test.go"
+    },
+    {
+      "from": "tests/grpc_gateway_test.go",
+      "to": "integration-tests/grpc_gateway_test.go"
+    },
+    {
+      "from": "tests/util_test.go",
+      "to": "integration-tests/util_test.go"
+    },
+    {
+      "from": "tests/db_test.go",
+      "to": "integration-tests/db_test.go"
+    },
+    {
+      "from": "tests/notifications_test.go",
+      "to": "integration-tests/notifications_test.go"
+    },
+    {
+      "from": "docker-compose/docker-compose.ci.yml",
+      "to": "docker-compose.ci.yml"
+    },
+    {
+      "from": "docker-compose/docker-compose.test.yml",
+      "to": "docker-compose.test.yml"
+    },
+    {
+      "from": "docker-compose/docker-compose.yml",
+      "to": "docker-compose.yml"
+    },
+    {
+      "from": "docker/cart/Dockerfile",
+      "to": "cart/Dockerfile"
+    },
+    {
+      "from": "docker/loms/Dockerfile",
+      "to": "loms/Dockerfile"
+    },
+    {
+      "from": "docker/notifications/Dockerfile",
+      "to": "notifications/Dockerfile"
+    },
+    {
+      "from": "docker/integration-tests/Dockerfile",
+      "to": "integration-tests/Dockerfile"
+    },
+    {
+      "from": "README.md",
+      "to": "README.md"
+    },
+    {
+      "from": ".golangci.yaml",
+      "to": ".golangci.yaml"
+    },
+    {
+      "from": "easyp.yaml",
+      "to": "easyp.yaml"
+    }
+  ]
+}
