@@ -50,6 +50,11 @@ type config struct {
 		User     string `env:"POSTGRES_USER" envDefault:"ecommerce_user"`
 		Password string `env:"POSTGRES_PASSWORD" envDefault:"12345"`
 	}
+
+	Kafka struct {
+		Brokers string `env:"KAFKA_BROKERS" envDefault:"localhost:9093"`
+		Topic   string `env:"KAFKA_NOTIFICATIONS_TOPIC" envDefault:"order_status_notifications"`
+	}
 }
 
 type testClients struct {
@@ -65,6 +70,7 @@ type testClients struct {
 
 func setup(t *testing.T) (*config, *testClients) {
 	t.Helper()
+	startCallbackServer()
 
 	cfg := loadConfig(t)
 	cfg.cleanupDB(t)

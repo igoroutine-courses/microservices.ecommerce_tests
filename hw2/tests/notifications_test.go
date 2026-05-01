@@ -1,22 +1,21 @@
 package tests
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
-	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/igoroutine-courses/microservices.ecommerce.tests/loms"
+	"github.com/segmentio/kafka-go"
 	"github.com/stretchr/testify/require"
 )
-
-func TestMain(m *testing.M) {
-	startCallbackServer()
-	os.Exit(m.Run())
-}
 
 type callbackRequest struct {
 	UserID  int64  `json:"user_id"`
@@ -53,9 +52,13 @@ func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.
 	ensureCallbackServer(t)
 	callbackStore.SetFail(true)
 
-	_, clients := setup(t)
+	cfg, clients := setup(t)
 
 	orderID := createOrderForNotificationTest(t, clients)
+	message := readKafkaNotification(t, cfg, orderID)
+	require.Equal(t, int64(900001), message.UserID)
+	require.Equal(t, orderID, message.OrderID)
+	require.Equal(t, "awaiting_payment", message.Status)
 
 	require.Eventually(t, func() bool {
 		return callbackStore.attemptsByOrder(orderID) >= 1
@@ -235,4 +238,35 @@ func createOrderForNotificationTest(t *testing.T, clients *testClients) (orderID
 	require.Greater(t, resp.GetOrderId(), int64(0))
 
 	return resp.GetOrderId()
+}
+
+func readKafkaNotification(t *testing.T, cfg *config, orderID int64) callbackRequest {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers: strings.Split(cfg.Kafka.Brokers, ","),
+		Topic:   cfg.Kafka.Topic,
+		GroupID: fmt.Sprintf("integration-tests-%d-%d", orderID, time.Now().UnixNano()),
+	})
+	defer func() {
+		require.NoError(t, reader.Close())
+	}()
+
+	for {
+		msg, err := reader.ReadMessage(ctx)
+		require.NoError(t, err)
+
+		if string(msg.Key) != strconv.FormatInt(orderID, 10) {
+			continue
+		}
+
+		var payload callbackRequest
+		require.NoError(t, json.Unmarshal(msg.Value, &payload))
+		if payload.OrderID == orderID {
+			return payload
+		}
+	}
 }
