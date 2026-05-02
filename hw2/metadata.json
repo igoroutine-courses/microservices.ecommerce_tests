@@ -1,6 +1,5 @@
 {
-  "_comment": "TODO use branch main",
-  "ref": "feature/hw2-tests",
+  "ref": "main",
   "version_path": "version.txt",
   "files": [
     {
