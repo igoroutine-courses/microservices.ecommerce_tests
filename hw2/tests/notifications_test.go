@@ -1,0 +1,272 @@
+package tests
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"net"
+	"net/http"
+	"strconv"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/igoroutine-courses/microservices.ecommerce.tests/loms"
+	"github.com/segmentio/kafka-go"
+	"github.com/stretchr/testify/require"
+)
+
+type callbackRequest struct {
+	UserID  int64  `json:"user_id"`
+	OrderID int64  `json:"order_id"`
+	Status  string `json:"status"`
+}
+
+func TestCreateOrderSucceedsWhenNotificationCallbackFails(t *testing.T) {
+	ensureCallbackServer(t)
+	callbackStore.SetFail(true)
+
+	_, clients := setup(t)
+
+	orderID := createOrderForNotificationTest(t, clients)
+	require.Greater(t, orderID, int64(0))
+
+	getResp, err := clients.Loms1.GetOrder(t.Context(), &loms.GetOrderRequest{
+		OrderId: orderID,
+	})
+	require.NoError(t, err)
+	require.Equal(t, loms.OrderStatus_ORDER_STATUS_AWAITING_PAYMENT, getResp.GetStatus())
+
+	require.Eventually(t, func() bool {
+		return callbackStore.attemptsByOrder(orderID) >= 1
+	}, 5*time.Second, 100*time.Millisecond)
+
+	callbackStore.SetFail(false)
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(orderID) >= 1
+	}, 8*time.Second, 100*time.Millisecond)
+}
+
+func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.T) {
+	ensureCallbackServer(t)
+	callbackStore.SetFail(true)
+
+	cfg, clients := setup(t)
+
+	orderID := createOrderForNotificationTest(t, clients)
+	message := readKafkaNotification(t, cfg, orderID)
+	require.Equal(t, int64(900001), message.UserID)
+	require.Equal(t, orderID, message.OrderID)
+	require.Equal(t, "awaiting_payment", message.Status)
+
+	require.Eventually(t, func() bool {
+		return callbackStore.attemptsByOrder(orderID) >= 1
+	}, 5*time.Second, 100*time.Millisecond)
+
+	require.Equal(t, 0, callbackStore.successesByOrder(orderID))
+
+	callbackStore.SetFail(false)
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(orderID) >= 1
+	}, 8*time.Second, 100*time.Millisecond)
+
+	require.GreaterOrEqual(t, callbackStore.attemptsByOrder(orderID), 2)
+}
+
+func TestOutboxDoesNotSendDuplicateNotificationAfterSuccess(t *testing.T) {
+	ensureCallbackServer(t)
+	callbackStore.SetFail(true)
+
+	_, clients := setup(t)
+
+	orderID := createOrderForNotificationTest(t, clients)
+
+	require.Eventually(t, func() bool {
+		return callbackStore.attemptsByOrder(orderID) >= 1
+	}, 5*time.Second, 100*time.Millisecond)
+
+	callbackStore.SetFail(false)
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(orderID) == 1
+	}, 8*time.Second, 100*time.Millisecond)
+
+	prev := callbackStore.successesByOrder(orderID)
+	time.Sleep(5 * time.Second)
+
+	require.Equal(t, prev, callbackStore.successesByOrder(orderID))
+}
+
+type callbackRecorder struct {
+	mx sync.Mutex
+
+	fail bool
+
+	attempts  []callbackRequest
+	successes []callbackRequest
+}
+
+func (r *callbackRecorder) Reset() {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	r.fail = false
+	r.attempts = nil
+	r.successes = nil
+}
+
+func (r *callbackRecorder) SetFail(v bool) {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	r.fail = v
+}
+
+func (r *callbackRecorder) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if req.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+
+	defer req.Body.Close()
+
+	var payload callbackRequest
+	if err := json.NewDecoder(req.Body).Decode(&payload); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	r.mx.Lock()
+	r.attempts = append(r.attempts, payload)
+	shouldFail := r.fail
+	if !shouldFail {
+		r.successes = append(r.successes, payload)
+	}
+	r.mx.Unlock()
+
+	if shouldFail {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte("temporary callback failure"))
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write([]byte("ok"))
+}
+
+func (r *callbackRecorder) attemptsByOrder(orderID int64) int {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	count := 0
+	for _, item := range r.attempts {
+		if item.OrderID == orderID {
+			count++
+		}
+	}
+
+	return count
+}
+
+func (r *callbackRecorder) successesByOrder(orderID int64) int {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	count := 0
+	for _, item := range r.successes {
+		if item.OrderID == orderID {
+			count++
+		}
+	}
+
+	return count
+}
+
+var (
+	callbackSrvOnce sync.Once
+	callbackStore   = &callbackRecorder{}
+)
+
+func ensureCallbackServer(t *testing.T) {
+	t.Helper()
+	startCallbackServer()
+	callbackStore.Reset()
+}
+
+func startCallbackServer() {
+	callbackSrvOnce.Do(func() {
+		mux := http.NewServeMux()
+		mux.Handle("/", callbackStore)
+
+		ln, err := net.Listen("tcp", ":8080")
+		if err != nil {
+			panic(err)
+		}
+
+		srv := &http.Server{
+			Handler:           mux,
+			ReadHeaderTimeout: 2 * time.Second,
+		}
+
+		go func() {
+			_ = srv.Serve(ln)
+		}()
+	})
+}
+
+func createOrderForNotificationTest(t *testing.T, clients *testClients) (orderID int64) {
+	t.Helper()
+
+	sku := createProductWithStock(
+		t,
+		clients.Product1,
+		clients.Stocks1,
+		"Notification Product",
+		100,
+		10,
+	)
+
+	resp, err := clients.Loms1.CreateOrder(t.Context(), &loms.CreateOrderRequest{
+		UserId: 900001,
+		Items: []*loms.Item{
+			{Sku: sku, Count: 2},
+		},
+	})
+	require.NoError(t, err)
+	require.Greater(t, resp.GetOrderId(), int64(0))
+
+	return resp.GetOrderId()
+}
+
+func readKafkaNotification(t *testing.T, cfg *config, orderID int64) callbackRequest {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	reader := kafka.NewReader(kafka.ReaderConfig{
+		Brokers: strings.Split(cfg.Kafka.Brokers, ","),
+		Topic:   cfg.Kafka.Topic,
+		GroupID: fmt.Sprintf("integration-tests-%d-%d", orderID, time.Now().UnixNano()),
+	})
+	defer func() {
+		require.NoError(t, reader.Close())
+	}()
+
+	for {
+		msg, err := reader.ReadMessage(ctx)
+		require.NoError(t, err)
+
+		if string(msg.Key) != strconv.FormatInt(orderID, 10) {
+			continue
+		}
+
+		var payload callbackRequest
+		require.NoError(t, json.Unmarshal(msg.Value, &payload))
+		if payload.OrderID == orderID {
+			return payload
+		}
+	}
+}
