@@ -55,10 +55,7 @@ func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.
 	cfg, clients := setup(t)
 
 	orderID := createOrderForNotificationTest(t, clients)
-	message := readKafkaNotification(t, cfg, orderID)
-	require.Equal(t, int64(900001), message.UserID)
-	require.Equal(t, orderID, message.OrderID)
-	require.Equal(t, "awaiting_payment", message.Status)
+	requireKafkaNotification(t, cfg, orderID, "awaiting_payment")
 
 	require.Eventually(t, func() bool {
 		return callbackStore.attemptsByOrder(orderID) >= 1
@@ -73,6 +70,44 @@ func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.
 	}, 8*time.Second, 100*time.Millisecond)
 
 	require.GreaterOrEqual(t, callbackStore.attemptsByOrder(orderID), 2)
+}
+
+func TestKafkaNotificationsAreDeliveredForOrderStatusChanges(t *testing.T) {
+	ensureCallbackServer(t)
+
+	cfg, clients := setup(t)
+
+	paidOrderID := createOrderForNotificationTest(t, clients)
+	requireKafkaNotification(t, cfg, paidOrderID, "awaiting_payment")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrderAndStatus(paidOrderID, "awaiting_payment") == 1
+	}, 8*time.Second, 100*time.Millisecond)
+
+	_, err := clients.Loms1.PayOrder(t.Context(), &loms.PayOrderRequest{OrderId: paidOrderID})
+	require.NoError(t, err)
+
+	requireKafkaNotification(t, cfg, paidOrderID, "paid")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrderAndStatus(paidOrderID, "paid") == 1
+	}, 8*time.Second, 100*time.Millisecond)
+
+	cancelledOrderID := createOrderForNotificationTest(t, clients)
+	requireKafkaNotification(t, cfg, cancelledOrderID, "awaiting_payment")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrderAndStatus(cancelledOrderID, "awaiting_payment") == 1
+	}, 8*time.Second, 100*time.Millisecond)
+
+	_, err = clients.Loms1.CancelOrder(t.Context(), &loms.CancelOrderRequest{OrderId: cancelledOrderID})
+	require.NoError(t, err)
+
+	requireKafkaNotification(t, cfg, cancelledOrderID, "cancelled")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrderAndStatus(cancelledOrderID, "cancelled") == 1
+	}, 8*time.Second, 100*time.Millisecond)
 }
 
 func TestOutboxDoesNotSendDuplicateNotificationAfterSuccess(t *testing.T) {
@@ -184,6 +219,20 @@ func (r *callbackRecorder) successesByOrder(orderID int64) int {
 	return count
 }
 
+func (r *callbackRecorder) successesByOrderAndStatus(orderID int64, status string) int {
+	r.mx.Lock()
+	defer r.mx.Unlock()
+
+	count := 0
+	for _, item := range r.successes {
+		if item.OrderID == orderID && item.Status == status {
+			count++
+		}
+	}
+
+	return count
+}
+
 var (
 	callbackSrvOnce sync.Once
 	callbackStore   = &callbackRecorder{}
@@ -240,7 +289,16 @@ func createOrderForNotificationTest(t *testing.T, clients *testClients) (orderID
 	return resp.GetOrderId()
 }
 
-func readKafkaNotification(t *testing.T, cfg *config, orderID int64) callbackRequest {
+func requireKafkaNotification(t *testing.T, cfg *config, orderID int64, status string) {
+	t.Helper()
+
+	message := readKafkaNotification(t, cfg, orderID, status)
+	require.Equal(t, int64(900001), message.UserID)
+	require.Equal(t, orderID, message.OrderID)
+	require.Equal(t, status, message.Status)
+}
+
+func readKafkaNotification(t *testing.T, cfg *config, orderID int64, status string) callbackRequest {
 	t.Helper()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
@@ -265,7 +323,7 @@ func readKafkaNotification(t *testing.T, cfg *config, orderID int64) callbackReq
 
 		var payload callbackRequest
 		require.NoError(t, json.Unmarshal(msg.Value, &payload))
-		if payload.OrderID == orderID {
+		if payload.OrderID == orderID && payload.Status == status {
 			return payload
 		}
 	}
