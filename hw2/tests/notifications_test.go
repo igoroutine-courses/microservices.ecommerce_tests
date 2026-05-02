@@ -72,6 +72,35 @@ func TestKafkaNotificationIsDeliveredAtLeastOnceAfterCallbackFailure(t *testing.
 	require.GreaterOrEqual(t, callbackStore.attemptsByOrder(orderID), 2)
 }
 
+func TestFailedKafkaNotificationIsRetriedBeforeFollowingMessage(t *testing.T) {
+	ensureCallbackServer(t)
+	callbackStore.SetFail(true)
+
+	cfg, clients := setup(t)
+
+	failedOrderID := createOrderForNotificationTest(t, clients)
+	requireKafkaNotification(t, cfg, failedOrderID, "awaiting_payment")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.attemptsByOrder(failedOrderID) >= 1
+	}, 5*time.Second, 100*time.Millisecond)
+	require.Equal(t, 0, callbackStore.successesByOrder(failedOrderID))
+
+	callbackStore.SetFail(false)
+
+	followingOrderID := createOrderForNotificationTest(t, clients)
+	requireKafkaNotification(t, cfg, followingOrderID, "awaiting_payment")
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(failedOrderID) >= 1
+	}, 8*time.Second, 100*time.Millisecond)
+	require.GreaterOrEqual(t, callbackStore.attemptsByOrder(failedOrderID), 2)
+
+	require.Eventually(t, func() bool {
+		return callbackStore.successesByOrder(followingOrderID) >= 1
+	}, 8*time.Second, 100*time.Millisecond)
+}
+
 func TestKafkaNotificationsAreDeliveredForOrderStatusChanges(t *testing.T) {
 	ensureCallbackServer(t)
 
